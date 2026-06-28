@@ -1,0 +1,85 @@
+export enum ErrorCode {
+  SUCCESS = 0,
+
+  PARAM_ERROR = 10001,
+  UNAUTHORIZED = 10002,
+  FORBIDDEN = 10003,
+  NOT_FOUND = 10004,
+  TOKEN_EXPIRED = 10005,
+  TOKEN_INVALID = 10006,
+
+  MEMBER_NOT_FOUND = 20001,
+  MEMBER_ALREADY_EXISTS = 20002,
+  MEMBER_PASSWORD_WRONG = 20003,
+  MEMBER_FROZEN = 20004,
+  MEMBER_HOURS_INSUFFICIENT = 20005,
+
+  COACH_NOT_FOUND = 30001,
+  COACH_ALREADY_EXISTS = 30002,
+  COACH_PASSWORD_WRONG = 30003,
+  COACH_ON_LEAVE = 30004,
+  COACH_INACTIVE = 30005,
+
+  COURSE_NOT_FOUND = 40001,
+  COURSE_INACTIVE = 40002,
+
+  SCHEDULE_NOT_FOUND = 50001,
+  SCHEDULE_TIME_CONFLICT = 50002,
+  SCHEDULE_FULL = 50003,
+  SCHEDULE_CANCELLED = 50004,
+  SCHEDULE_COMPLETED = 50005,
+  SCHEDULE_PAST = 50006,
+
+  BOOKING_NOT_FOUND = 60001,
+  BOOKING_ALREADY_EXISTS = 60002,
+  BOOKING_CANCEL_TOO_LATE = 60003,
+  BOOKING_ALREADY_CANCELLED = 60004,
+  BOOKING_ALREADY_CHECKED_IN = 60005,
+
+  LEAVE_CONFLICT = 70001,
+
+  INTERNAL_ERROR = 99999,
+}
+
+export const ErrorMessage: Record<ErrorCode, string> = {
+  [ErrorCode.SUCCESS]: '操作成功',
+
+  [ErrorCode.PARAM_ERROR]: '参数错误',
+  [ErrorCode.UNAUTHORIZED]: '未登录或登录已过期',
+  [ErrorCode.FORBIDDEN]: '无权限访问',
+  [ErrorCode.NOT_FOUND]: '资源不存在',
+  [ErrorCode.TOKEN_EXPIRED]: 'Token已过期',
+  [ErrorCode.TOKEN_INVALID]: 'Token无效',
+
+  [ErrorCode.MEMBER_NOT_FOUND]: '会员不存在',
+  [ErrorCode.MEMBER_ALREADY_EXISTS]: '该手机号已注册',
+  [ErrorCode.MEMBER_PASSWORD_WRONG]: '密码错误',
+  [ErrorCode.MEMBER_FROZEN]: '账号已被冻结',
+  [ErrorCode.MEMBER_HOURS_INSUFFICIENT]: '剩余课时不足',
+
+  [ErrorCode.COACH_NOT_FOUND]: '教练不存在',
+  [ErrorCode.COACH_ALREADY_EXISTS]: '该手机号已注册',
+  [ErrorCode.COACH_PASSWORD_WRONG]: '密码错误',
+  [ErrorCode.COACH_ON_LEAVE]: '教练请假中，暂不可约课',
+  [ErrorCode.COACH_INACTIVE]: '教练已离职',
+
+  [ErrorCode.COURSE_NOT_FOUND]: '课程不存在',
+  [ErrorCode.COURSE_INACTIVE]: '课程已下架',
+
+  [ErrorCode.SCHEDULE_NOT_FOUND]: '排课不存在',
+  [ErrorCode.SCHEDULE_TIME_CONFLICT]: '该教练此时间段已被占用',
+  [ErrorCode.SCHEDULE_FULL]: '该课程已满员',
+  [ErrorCode.SCHEDULE_CANCELLED]: '该排课已取消',
+  [ErrorCode.SCHEDULE_COMPLETED]: '该排课已完成',
+  [ErrorCode.SCHEDULE_PAST]: '该排课时间已过',
+
+  [ErrorCode.BOOKING_NOT_FOUND]: '预约记录不存在',
+  [ErrorCode.BOOKING_ALREADY_EXISTS]: '您已预约该课程',
+  [ErrorCode.BOOKING_CANCEL_TOO_LATE]: '距开课不足24小时，无法取消',
+  [ErrorCode.BOOKING_ALREADY_CANCELLED]: '该预约已取消',
+  [ErrorCode.BOOKING_ALREADY_CHECKED_IN]: '已签到，无法取消',
+
+  [ErrorCode.LEAVE_CONFLICT]: '该日期已有请假记录',
+
+  [ErrorCode.INTERNAL_ERROR]: '服务器内部错误',
+};
