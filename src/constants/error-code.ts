@@ -38,6 +38,14 @@ export enum ErrorCode {
 
   LEAVE_CONFLICT = 70001,
 
+  WAITLIST_FULL_PROMPT = 80001,
+  WAITLIST_NOT_FOUND = 80002,
+  WAITLIST_ALREADY_EXISTS = 80003,
+  WAITLIST_NOT_QUEUED = 80004,
+  WAITLIST_PRIVATE_NOT_ALLOWED = 80005,
+  WAITLIST_HOURS_INSUFFICIENT = 80006,
+  WAITLIST_AUTO_FAILED = 80007,
+
   INTERNAL_ERROR = 99999,
 }
 
@@ -80,6 +88,14 @@ export const ErrorMessage: Record<ErrorCode, string> = {
   [ErrorCode.BOOKING_ALREADY_CHECKED_IN]: '已签到，无法取消',
 
   [ErrorCode.LEAVE_CONFLICT]: '该日期已有请假记录',
+
+  [ErrorCode.WAITLIST_FULL_PROMPT]: '该团课已满员，是否加入候补队列？',
+  [ErrorCode.WAITLIST_NOT_FOUND]: '候补记录不存在',
+  [ErrorCode.WAITLIST_ALREADY_EXISTS]: '您已在该课程候补队列中',
+  [ErrorCode.WAITLIST_NOT_QUEUED]: '该候补不在排队状态，无法操作',
+  [ErrorCode.WAITLIST_PRIVATE_NOT_ALLOWED]: '私教课程不支持候补',
+  [ErrorCode.WAITLIST_HOURS_INSUFFICIENT]: '候补失败，课时不足（至少需保留对应课时）',
+  [ErrorCode.WAITLIST_AUTO_FAILED]: '候补自动递补失败，课时不足已跳过',
 
   [ErrorCode.INTERNAL_ERROR]: '服务器内部错误',
 };

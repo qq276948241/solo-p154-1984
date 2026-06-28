@@ -12,4 +12,8 @@ router.post('/book', authMiddleware(['member']), courseController.bookCourse);
 router.post('/cancel', authMiddleware(['member']), courseController.cancelBooking);
 router.get('/my-bookings', authMiddleware(['member']), courseController.getMyBookings);
 
+router.post('/waitlist/join', authMiddleware(['member']), courseController.joinWaitlist);
+router.post('/waitlist/cancel', authMiddleware(['member']), courseController.cancelWaitlist);
+router.get('/waitlist/my', authMiddleware(['member']), courseController.getMyWaitlists);
+
 export default router;

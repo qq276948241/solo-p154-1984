@@ -8,6 +8,7 @@ import { Schedule } from './entities/Schedule';
 import { Booking } from './entities/Booking';
 import { CourseRecord } from './entities/CourseRecord';
 import { CoachLeave } from './entities/CoachLeave';
+import { Waitlist } from './entities/Waitlist';
 
 dotenv.config();
 
@@ -20,7 +21,7 @@ export const AppDataSource = new DataSource({
   database: process.env.DB_DATABASE,
   synchronize: true,
   logging: false,
-  entities: [Member, Coach, Course, Schedule, Booking, CourseRecord, CoachLeave],
+  entities: [Member, Coach, Course, Schedule, Booking, CourseRecord, CoachLeave, Waitlist],
   migrations: [],
   subscribers: [],
   timezone: '+08:00',
