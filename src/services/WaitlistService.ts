@@ -4,11 +4,11 @@ import { Schedule, ScheduleStatus } from '../entities/Schedule';
 import { Booking, BookingStatus } from '../entities/Booking';
 import { Member } from '../entities/Member';
 import { Course, CourseType } from '../entities/Course';
-import { CourseRecord, RecordType } from '../entities/CourseRecord';
 import { Waitlist, WaitlistStatus } from '../entities/Waitlist';
 import { ErrorCode } from '../constants/error-code';
 import { throwError } from '../utils/app-error';
 import { ScheduleService } from './ScheduleService';
+import { MemberHoursService } from './MemberHoursService';
 import dayjs = require('dayjs');
 
 export interface WaitlistAutoFillResult {
@@ -77,7 +77,12 @@ export class WaitlistService {
       }
 
       const costHours = Number(schedule.course?.cost_hours || 1);
-      const member = await manager.findOne(Member, { where: { id: memberId } });
+      const member = await manager
+        .getRepository(Member)
+        .createQueryBuilder('m')
+        .where('m.id = :id', { id: memberId })
+        .setLock('pessimistic_write')
+        .getOne();
       if (!member) throwError(ErrorCode.MEMBER_NOT_FOUND);
       if (Number(member.remaining_hours) < costHours) {
         throwError(ErrorCode.WAITLIST_HOURS_INSUFFICIENT);
@@ -133,8 +138,34 @@ export class WaitlistService {
         where: { id: waitlistId, member_id: memberId },
       });
       if (!waitlist) throwError(ErrorCode.WAITLIST_NOT_FOUND);
+
+      if (waitlist.status === WaitlistStatus.FILLED) {
+        throwError(ErrorCode.WAITLIST_ALREADY_FILLED, undefined, {
+          waitlist_id: waitlist.id,
+          booking_id: waitlist.booking_id,
+          filled_at: waitlist.filled_at,
+          tip: '已候补成功，请前往预约列表取消该预约',
+        });
+      }
+      if (waitlist.status === WaitlistStatus.CANCELLED) {
+        throwError(ErrorCode.WAITLIST_ALREADY_CANCELLED, undefined, {
+          waitlist_id: waitlist.id,
+          cancelled_at: waitlist.cancelled_at,
+          cancel_reason: waitlist.cancel_reason,
+        });
+      }
+      if (waitlist.status === WaitlistStatus.EXPIRED) {
+        throwError(ErrorCode.WAITLIST_ALREADY_EXPIRED, undefined, {
+          waitlist_id: waitlist.id,
+          cancelled_at: waitlist.cancelled_at,
+          cancel_reason: waitlist.cancel_reason,
+        });
+      }
       if (waitlist.status !== WaitlistStatus.QUEUED) {
-        throwError(ErrorCode.WAITLIST_NOT_QUEUED);
+        throwError(ErrorCode.WAITLIST_NOT_QUEUED, undefined, {
+          waitlist_id: waitlist.id,
+          status: waitlist.status,
+        });
       }
 
       waitlist.status = WaitlistStatus.CANCELLED;
@@ -222,6 +253,8 @@ export class WaitlistService {
       return null;
     }
 
+    const costHours = Number(Number(schedule.course?.cost_hours || 1).toFixed(1));
+    const maxCap = schedule.course?.max_capacity || 0;
     let filled: WaitlistAutoFillResult | null = null;
 
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -234,22 +267,6 @@ export class WaitlistService {
         lock: { mode: 'pessimistic_write' },
       });
       if (!nextWaiter) break;
-
-      const waiterMember = await manager.findOne(Member, {
-        where: { id: nextWaiter.member_id },
-        lock: { mode: 'pessimistic_write' },
-      });
-      const costHours = Number(schedule.course?.cost_hours || 1);
-
-      if (!waiterMember || Number(waiterMember.remaining_hours) < costHours) {
-        nextWaiter.status = WaitlistStatus.EXPIRED;
-        nextWaiter.cancelled_at = new Date();
-        nextWaiter.cancel_reason = waiterMember
-          ? '课时不足，自动跳过候补'
-          : '会员账号异常，自动跳过候补';
-        await manager.save(nextWaiter);
-        continue;
-      }
 
       const alreadyBooked = await manager.findOne(Booking, {
         where: {
@@ -266,10 +283,23 @@ export class WaitlistService {
         continue;
       }
 
-      waiterMember.remaining_hours =
-        Number(waiterMember.remaining_hours) - costHours;
-      waiterMember.used_hours = Number(waiterMember.used_hours) + costHours;
-      await manager.save(waiterMember);
+      let hoursResult;
+      try {
+        hoursResult = await MemberHoursService.deduct(
+          manager,
+          nextWaiter.member_id,
+          costHours,
+          {
+            remark: `候补递补：${schedule.course?.name || '课程'}`,
+          }
+        );
+      } catch (err) {
+        nextWaiter.status = WaitlistStatus.EXPIRED;
+        nextWaiter.cancelled_at = new Date();
+        nextWaiter.cancel_reason = '课时不足，自动跳过候补';
+        await manager.save(nextWaiter);
+        continue;
+      }
 
       const newBooking = manager.create(Booking, {
         member_id: nextWaiter.member_id,
@@ -285,22 +315,18 @@ export class WaitlistService {
       nextWaiter.booking_id = newBooking.id;
       await manager.save(nextWaiter);
 
-      schedule.booked_count = schedule.booked_count + 1;
-      const maxCap = schedule.course?.max_capacity || 0;
-      if (maxCap > 0 && schedule.booked_count >= maxCap) {
-        schedule.status = ScheduleStatus.FULL;
-      }
-      await manager.save(schedule);
-
-      const record = manager.create(CourseRecord, {
-        member_id: nextWaiter.member_id,
-        booking_id: newBooking.id,
-        type: RecordType.DEDUCT,
-        hours_change: -costHours,
-        remaining_after: Number(waiterMember.remaining_hours),
-        remark: `候补递补：${schedule.course?.name || '课程'}`,
-      });
-      await manager.save(record);
+      await manager
+        .createQueryBuilder()
+        .update(Schedule)
+        .set({
+          booked_count: () => 'booked_count + 1',
+          status:
+            maxCap > 0 && schedule.booked_count + 1 >= maxCap
+              ? `'${ScheduleStatus.FULL}'`
+              : undefined,
+        })
+        .where('id = :id', { id: schedule.id })
+        .execute();
 
       filled = {
         member_id: nextWaiter.member_id,

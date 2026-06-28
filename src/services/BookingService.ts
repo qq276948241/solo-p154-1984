@@ -4,7 +4,6 @@ import { Schedule, ScheduleStatus } from '../entities/Schedule';
 import { Booking, BookingStatus } from '../entities/Booking';
 import { Member } from '../entities/Member';
 import { CourseType } from '../entities/Course';
-import { CourseRecord, RecordType } from '../entities/CourseRecord';
 import { Waitlist, WaitlistStatus } from '../entities/Waitlist';
 import { ErrorCode } from '../constants/error-code';
 import { throwError } from '../utils/app-error';
@@ -13,6 +12,7 @@ import {
   WaitlistService,
   WaitlistAutoFillResult,
 } from './WaitlistService';
+import { MemberHoursService } from './MemberHoursService';
 import dayjs = require('dayjs');
 
 export interface BookResult {
@@ -78,17 +78,9 @@ export class BookingService {
         if (onLeave) throwError(ErrorCode.COACH_ON_LEAVE);
       }
 
-      const costHours = Number(schedule.course?.cost_hours || 1);
-
-      const member = await manager.findOne(Member, {
-        where: { id: memberId },
-        lock: { mode: 'pessimistic_write' },
-      });
-      if (!member) throwError(ErrorCode.MEMBER_NOT_FOUND);
-
-      if (Number(member.remaining_hours) < costHours) {
-        throwError(ErrorCode.MEMBER_HOURS_INSUFFICIENT);
-      }
+      const costHours = Number(
+        Number(schedule.course?.cost_hours || 1).toFixed(1)
+      );
 
       if (schedule.course?.type === CourseType.PRIVATE) {
         const hasConflict = await ScheduleService.checkCoachTimeConflict(
@@ -129,9 +121,10 @@ export class BookingService {
         }
       }
 
-      member.remaining_hours = Number(member.remaining_hours) - costHours;
-      member.used_hours = Number(member.used_hours) + costHours;
-      await manager.save(member);
+      const member = await manager.findOne(Member, {
+        where: { id: memberId },
+      });
+      if (!member) throwError(ErrorCode.MEMBER_NOT_FOUND);
 
       const booking = manager.create(Booking, {
         member_id: memberId,
@@ -142,30 +135,43 @@ export class BookingService {
       });
       await manager.save(booking);
 
-      schedule.booked_count = schedule.booked_count + 1;
-      if (
-        schedule.course?.type === CourseType.GROUP &&
-        schedule.course.max_capacity &&
-        schedule.booked_count >= schedule.course.max_capacity
-      ) {
-        schedule.status = ScheduleStatus.FULL;
-      }
-      await manager.save(schedule);
+      const hoursResult = await MemberHoursService.deduct(
+        manager,
+        memberId,
+        costHours,
+        {
+          booking_id: booking.id,
+          remark: `预约${schedule.course?.name || '课程'}`,
+        }
+      );
 
-      const record = manager.create(CourseRecord, {
-        member_id: memberId,
-        booking_id: booking.id,
-        type: RecordType.DEDUCT,
-        hours_change: -costHours,
-        remaining_after: Number(member.remaining_hours),
-        remark: `预约${schedule.course?.name || '课程'}`,
-      });
-      await manager.save(record);
+      await manager
+        .createQueryBuilder()
+        .update(Schedule)
+        .set({ booked_count: () => 'booked_count + 1' })
+        .where('id = :id', { id: scheduleId })
+        .execute();
+
+      if (schedule.course?.type === CourseType.GROUP) {
+        const maxCap = schedule.course?.max_capacity || 0;
+        if (maxCap > 0) {
+          const refreshed = await manager
+            .getRepository(Schedule)
+            .createQueryBuilder('s')
+            .where('s.id = :id', { id: scheduleId })
+            .setLock('pessimistic_write')
+            .getOne();
+          if (refreshed && refreshed.booked_count >= maxCap) {
+            refreshed.status = ScheduleStatus.FULL;
+            await manager.save(refreshed);
+          }
+        }
+      }
 
       return {
         booking_id: booking.id,
         deducted_hours: costHours,
-        remaining_hours: Number(member.remaining_hours),
+        remaining_hours: hoursResult.remaining_hours,
       };
     });
   }
@@ -180,7 +186,7 @@ export class BookingService {
     return await AppDataSource.transaction(async (manager) => {
       const booking = await manager.findOne(Booking, {
         where: { id: bookingId, member_id: memberId },
-        relations: ['schedule'],
+        relations: ['schedule', 'schedule.course'],
       });
       if (!booking) throwError(ErrorCode.BOOKING_NOT_FOUND);
 
@@ -197,64 +203,59 @@ export class BookingService {
         process.env.CANCEL_REFUND_THRESHOLD_HOURS || 24
       );
 
+      const deducted = Number(Number(booking.deducted_hours).toFixed(1));
       let refundHours = 0;
-      if (hoursBeforeClass >= threshold) {
-        refundHours = Number(
-          (Number(booking.deducted_hours) / 2).toFixed(1)
-        );
+      if (hoursBeforeClass >= threshold && deducted > 0) {
+        refundHours = Number((deducted / 2).toFixed(1));
+        if (refundHours < 0) refundHours = 0;
+        if (refundHours > deducted) refundHours = deducted;
       }
 
       if (refundHours > 0) {
-        const member = await manager.findOne(Member, {
-          where: { id: memberId },
-          lock: { mode: 'pessimistic_write' },
+        await MemberHoursService.refund(manager, memberId, refundHours, {
+          booking_id: bookingId,
+          remark: `取消课程退款(提前24h退50%)`,
         });
-        if (member) {
-          member.remaining_hours =
-            Number(member.remaining_hours) + refundHours;
-          member.used_hours = Math.max(
-            0,
-            Number(member.used_hours) - refundHours
-          );
-          await manager.save(member);
-
-          const record = manager.create(CourseRecord, {
-            member_id: memberId,
-            booking_id: booking.id,
-            type: RecordType.REFUND,
-            hours_change: refundHours,
-            remaining_after: Number(member.remaining_hours),
-            remark: `取消课程退款${
-              hoursBeforeClass >= threshold ? '(提前24h退50%)' : ''
-            }`,
-          });
-          await manager.save(record);
-        }
       }
 
-      booking.status = BookingStatus.CANCELLED;
-      booking.cancelled_at = new Date();
-      booking.cancel_reason = reason || '';
-      booking.refunded_hours = refundHours;
-      await manager.save(booking);
+      await manager
+        .createQueryBuilder()
+        .update(Booking)
+        .set({
+          status: BookingStatus.CANCELLED,
+          cancelled_at: new Date(),
+          cancel_reason: reason || '',
+          refunded_hours: refundHours,
+        })
+        .where('id = :id', { id: bookingId })
+        .execute();
+
+      await manager
+        .createQueryBuilder()
+        .update(Schedule)
+        .set({
+          booked_count: () => 'GREATEST(booked_count - 1, 0)',
+          status:
+            booking.schedule.status === ScheduleStatus.FULL
+              ? `'${ScheduleStatus.AVAILABLE}'`
+              : undefined,
+        })
+        .where('id = :id', { id: booking.schedule_id })
+        .execute();
+
+      const schedule = await manager
+        .getRepository(Schedule)
+        .createQueryBuilder('s')
+        .leftJoinAndSelect('s.course', 'course')
+        .where('s.id = :id', { id: booking.schedule_id })
+        .setLock('pessimistic_write')
+        .getOne();
 
       let waitlistFilled: WaitlistAutoFillResult | null = null;
-
-      const schedule = await manager.findOne(Schedule, {
-        where: { id: booking.schedule_id },
-        relations: ['course'],
-      });
-
-      if (schedule) {
-        schedule.booked_count = Math.max(0, schedule.booked_count - 1);
-        if (schedule.status === ScheduleStatus.FULL) {
-          schedule.status = ScheduleStatus.AVAILABLE;
-        }
-        await manager.save(schedule);
-
+      if (schedule && schedule.course) {
         waitlistFilled = await WaitlistService.autoFillFromWaitlist(
           manager,
-          schedule as any
+          schedule
         );
       }
 

@@ -45,6 +45,9 @@ export enum ErrorCode {
   WAITLIST_PRIVATE_NOT_ALLOWED = 80005,
   WAITLIST_HOURS_INSUFFICIENT = 80006,
   WAITLIST_AUTO_FAILED = 80007,
+  WAITLIST_ALREADY_FILLED = 80008,
+  WAITLIST_ALREADY_CANCELLED = 80009,
+  WAITLIST_ALREADY_EXPIRED = 80010,
 
   INTERNAL_ERROR = 99999,
 }
@@ -96,6 +99,9 @@ export const ErrorMessage: Record<ErrorCode, string> = {
   [ErrorCode.WAITLIST_PRIVATE_NOT_ALLOWED]: '私教课程不支持候补',
   [ErrorCode.WAITLIST_HOURS_INSUFFICIENT]: '候补失败，课时不足（至少需保留对应课时）',
   [ErrorCode.WAITLIST_AUTO_FAILED]: '候补自动递补失败，课时不足已跳过',
+  [ErrorCode.WAITLIST_ALREADY_FILLED]: '已候补成功，请前往我的预约列表取消预约',
+  [ErrorCode.WAITLIST_ALREADY_CANCELLED]: '该候补已被取消过',
+  [ErrorCode.WAITLIST_ALREADY_EXPIRED]: '该候补已失效',
 
   [ErrorCode.INTERNAL_ERROR]: '服务器内部错误',
 };
